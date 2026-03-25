@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PixelFlow Preview</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;
+  font-family:'Segoe UI',system-ui,sans-serif;user-select:none}
+
+/* ── HUD ── */
+#hud{
+  position:fixed;top:0;left:0;right:0;height:28px;
+  background:rgba(0,0,0,.75);backdrop-filter:blur(4px);
+  display:flex;align-items:center;gap:0;
+  font-size:11px;font-family:monospace;color:#aaa;
+  z-index:100;border-bottom:1px solid rgba(255,255,255,.1);
+}
+.hud-cell{padding:0 12px;height:100%;display:flex;align-items:center;
+  border-right:1px solid rgba(255,255,255,.08);white-space:nowrap;gap:6px}
+.hud-green{color:#4ec9b0}
+.hud-r{margin-left:auto;display:flex;height:100%}
+.hud-btn{padding:0 12px;height:100%;display:flex;align-items:center;
+  cursor:pointer;color:#aaa;border-left:1px solid rgba(255,255,255,.08);
+  transition:background .1s}
+.hud-btn:hover{background:rgba(255,255,255,.08);color:#fff}
+.hud-btn.restart{color:#4ec9b0}
+
+/* ── CANVAS WRAP ── */
+#wrap{
+  position:fixed;top:28px;left:0;right:0;bottom:0;
+  display:flex;align-items:center;justify-content:center;
+  background:#1a1a1a;
+}
+/* 3DS dual-screen layout */
+#ds-shell{
+  display:flex;flex-direction:column;align-items:center;gap:0;
+  filter:drop-shadow(0 0 24px rgba(0,0,0,.8));
+}
+#canvas-top,#canvas-bot{
+  display:block;image-rendering:pixelated;
+}
+#canvas-top{ box-shadow:inset 0 0 0 2px #111; }
+#canvas-bot{ box-shadow:inset 0 0 0 2px #111; }
+#ds-bezel{
+  width:100%;height:14px;background:#1a1a1a;
+  border-top:2px solid #0a0a0a;border-bottom:2px solid #0a0a0a;
+}
+.ds-label{
+  font-size:9px;font-family:monospace;color:#555;
+  text-align:center;padding:2px 0;letter-spacing:1px;text-transform:uppercase;
+}
+
+/* ── OVERLAY ── */
+#overlay{
+  position:fixed;inset:0;z-index:50;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;background:rgba(0,0,0,.85);
+}
+#overlay.hidden{display:none}
+.ov-icon{font-size:48px}
+.ov-title{font-size:18px;font-weight:600;color:#fff}
+.ov-desc{font-size:12px;color:#888;text-align:center;line-height:1.8;max-width:300px}
+.ov-btn{
+  margin-top:6px;padding:8px 28px;
+  background:#007acc;color:#fff;border:none;
+  border-radius:3px;font-size:13px;font-weight:600;cursor:pointer;
+}
+.ov-btn:hover{background:#1a8ad4}
+.ov-warn{color:#ce9178;font-size:11px;font-family:monospace}
+
+/* ── LOADING BAR ── */
+#load-bar{
+  position:fixed;bottom:0;left:0;height:2px;background:#007acc;
+  transition:width .2s;width:0%;z-index:200;
+}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="hud-cell">▶ <span class="hud-green" id="hud-scene">—</span></div>
+  <div class="hud-cell">FPS: <span class="hud-green" id="hud-fps">—</span></div>
+  <div class="hud-cell">Objects: <span class="hud-green" id="hud-objs">0</span></div>
+  <div class="hud-cell" id="hud-plat">—</div>
+  <div class="hud-r">
+    <div class="hud-btn restart" onclick="restart()">↺ Restart</div>
+    <div class="hud-btn" onclick="togglePause()" id="btn-pause">⏸ Pause</div>
+    <div class="hud-btn" onclick="window.close()">✕ Close</div>
+  </div>
+</div>
+
+<div id="wrap">
+  <div id="ds-shell">
+    <div class="ds-label" id="label-top">Top Screen</div>
+    <canvas id="canvas-top"></canvas>
+    <div id="ds-bezel"></div>
+    <canvas id="canvas-bot"></canvas>
+    <div class="ds-label" id="label-bot">Bottom Screen</div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="ov-icon">⚡</div>
+  <div class="ov-title" id="ov-title">Loading Preview…</div>
+  <div class="ov-desc" id="ov-desc">Reading scene data and loading sprites…</div>
+  <div class="ov-warn" id="ov-warn"></div>
+</div>
+<div id="load-bar"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// DATA — read everything from localStorage / IDB
+// ══════════════════════════════════════════════════════
+const SK_EVENTS = 'pf_events_v1';
+const SK_EVENTS_BY_SCENE = 'pf_events_by_scene_v1';
+const IDB_NAME  = 'pf_scene_images';
+
+function ls(k){try{return JSON.parse(localStorage.getItem(k))||null;}catch{return null;}}
+function readAllEvents(){
+  const byScene = ls(SK_EVENTS_BY_SCENE);
+  if(byScene && typeof byScene === 'object' && !Array.isArray(byScene)){
+    const merged = [];
+    Object.keys(byScene).forEach(sc=>{
+      (byScene[sc]||[]).forEach(e=>merged.push({...e, scene: sc}));
+    });
+    return merged;
+  }
+  const flat = ls(SK_EVENTS) || [];
+  return (flat||[]).map(e=>({...e, scene: e?.scene || 'Level_01'}));
+}
+
+// Read preview config (written by scene editor's preview() call)
+const CFG = ls('pf_preview_config') || {
+  startScene: 'Level_01',
+  platform:   '3ds',
+  scenes:     ['Level_01'],
+};
+
+// Nintendo 3DS: top screen 400×240, bottom screen 320×240
+const TOP_W=400, TOP_H=240, BOT_W=320, BOT_H=240;
+const plat = {name:'Nintendo 3DS', w:400, h:240};
+function isBottomLayer(layerId, obj){
+  const layers = CFG.layers||[];
+  const layer = layers.find(l=>l.id===layerId);
+  if(layer && /^BS_/i.test(layer.name)) return true;
+  // Fallback: full scene data includes layerName (survives stale/missing CFG.layers)
+  if(obj && obj.layerName && /^BS_/i.test(obj.layerName)) return true;
+  return false;
+}
+
+// ══════════════════════════════════════════════════════
+// CANVAS
+// ══════════════════════════════════════════════════════
+// 3DS: two separate canvases
+const canvasTop = document.getElementById('canvas-top');
+const canvasBot = document.getElementById('canvas-bot');
+const ctxTop    = canvasTop.getContext('2d');
+const ctxBot    = canvasBot.getContext('2d');
+// Keep a 'canvas' alias so existing code that refs canvas still works
+const canvas    = canvasTop;
+const ctx       = ctxTop;
+
+canvasTop.width  = TOP_W; canvasTop.height = TOP_H;
+canvasBot.width  = BOT_W; canvasBot.height = BOT_H;
+
+function resizeCanvas(){
+  const wrap = document.getElementById('wrap');
+  const bw   = wrap.clientWidth  - 40;
+  const bh   = wrap.clientHeight - 60;
+  // Scale to fit both screens + bezel in available space
+  const totalH = TOP_H + 18 + BOT_H; // 18 = bezel
+  const scale  = Math.min(bw / TOP_W, bh / totalH, 4);
+  const s = Math.max(1, scale);
+  canvasTop.style.width  = Math.floor(TOP_W*s)+'px';
+  canvasTop.style.height = Math.floor(TOP_H*s)+'px';
+  canvasBot.style.width  = Math.floor(BOT_W*s)+'px';
+  canvasBot.style.height = Math.floor(BOT_H*s)+'px';
+  document.getElementById('ds-bezel').style.width = Math.floor(TOP_W*s)+'px';
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+document.getElementById('hud-plat').textContent = 'Nintendo 3DS · 400×240 / 320×240';
+
+// ══════════════════════════════════════════════════════
+// INDEXEDDB — load sprite images
+// ══════════════════════════════════════════════════════
+let _idb = null;
+function openIDB(){
+  if(_idb) return Promise.resolve(_idb);
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open(IDB_NAME, 1);
+    r.onupgradeneeded = e => e.target.result.createObjectStore('imgs');
+    r.onsuccess = e => { _idb = e.target.result; res(_idb); };
+    r.onerror   = e => rej(e.target.error);
+  });
+}
+function idbGet(key){
+  return openIDB().then(db => new Promise((res,rej)=>{
+    const r = db.transaction('imgs','readonly').objectStore('imgs').get(key);
+    r.onsuccess = e => res(e.target.result||null);
+    r.onerror   = e => rej(e.target.error);
+  }));
+}
+
+// image cache: objId → HTMLImageElement
+const IMG = {};
+
+async function loadImages(sceneObjs){
+  const promises = sceneObjs
+    .filter(o => o.hasImage)
+    .map(async o => {
+      if(IMG[o.id]) return;
+      try{
+        const blob = await idbGet(o.id);
+        if(!blob) return;
+        const url = URL.createObjectURL(blob);
+        await new Promise(res => {
+          const img = new Image();
+          img.onload = () => { IMG[o.id] = img; res(); };
+          img.onerror = res;
+          img.src = url;
+        });
+      }catch(_){}
+    });
+  await Promise.all(promises);
+}
+
+// ══════════════════════════════════════════════════════
+// INPUT
+// ══════════════════════════════════════════════════════
+// Map keyboard keys → game KEY_ constants (same as C++ enum order)
+const KEY = {
+  UP:0,DOWN:1,LEFT:2,RIGHT:3,
+  CROSS:4,CIRCLE:5,SQUARE:6,TRIANGLE:7,
+  L1:8,R1:9,L2:10,R2:11,
+  START:12,SELECT:13,
+  A:14,B:15,X:16,Y:17,L:18,R:19,
+  SPACE:20,ENTER:21,ESC:22,
+};
+const KEY_COUNT = 23;
+
+// Keyboard → KEY mapping (multiple keys can map to same button)
+const KB_MAP = {
+  ArrowUp:'UP',    ArrowDown:'DOWN', ArrowLeft:'LEFT', ArrowRight:'RIGHT',
+  'z':'CROSS',     'Z':'CROSS',      'x':'CIRCLE',     'X':'CIRCLE',
+  'a':'SQUARE',    'A':'SQUARE',     's':'TRIANGLE',   'S':'TRIANGLE',
+  'q':'L1',        'Q':'L1',         'e':'R1',          'E':'R1',
+  Enter:'START',   Backspace:'SELECT',
+  ' ':'SPACE',     Escape:'ESC',
+  'w':'UP',        'd':'RIGHT',
+};
+
+// PSP / Vita / 3DS / Wii button label display
+const KEY_LABEL = {
+  CROSS:'✕',CIRCLE:'○',SQUARE:'□',TRIANGLE:'△',
+  L1:'L',R1:'R',START:'Start',SELECT:'Select',
+  UP:'↑',DOWN:'↓',LEFT:'←',RIGHT:'→',
+  SPACE:'Space',ENTER:'Enter',ESC:'Esc',
+  A:'A',B:'B',X:'X',Y:'Y',L:'L',R:'R',
+};
+
+const input = {
+  held:         new Uint8Array(KEY_COUNT),
+  justPressed:  new Uint8Array(KEY_COUNT),
+  justReleased: new Uint8Array(KEY_COUNT),
+  _raw:         new Uint8Array(KEY_COUNT), // current physical state
+};
+const touch = {
+  down:false, pressed:false, released:false, x:0, y:0, _raw:false, _prev:false,
+};
+function _botPoint(ev){
+  const r=canvasBot.getBoundingClientRect();
+  if(!r.width||!r.height) return {x:0,y:0};
+  const x=((ev.clientX-r.left)/r.width)*BOT_W;
+  const y=((ev.clientY-r.top)/r.height)*BOT_H;
+  return {x:Math.max(0,Math.min(BOT_W,x)), y:Math.max(0,Math.min(BOT_H,y))};
+}
+canvasBot.addEventListener('pointerdown',e=>{
+  const p=_botPoint(e); touch.x=p.x; touch.y=p.y; touch._raw=true; canvasBot.setPointerCapture?.(e.pointerId);
+});
+canvasBot.addEventListener('pointermove',e=>{
+  const p=_botPoint(e); touch.x=p.x; touch.y=p.y; if((e.buttons&1)!==0) touch._raw=true;
+});
+canvasBot.addEventListener('pointerup',e=>{
+  const p=_botPoint(e); touch.x=p.x; touch.y=p.y; touch._raw=false;
+});
+canvasBot.addEventListener('pointercancel',()=>{ touch._raw=false; });
+
+window.addEventListener('keydown', e => {
+  if(e.repeat) return;
+  const kn = KB_MAP[e.key] || KB_MAP[e.code];
+  if(kn !== undefined && KEY[kn] !== undefined){
+    e.preventDefault();
+    input._raw[KEY[kn]] = 1;
+  }
+  if(e.key === 'F5' || (e.ctrlKey && e.key === 'r')) { e.preventDefault(); restart(); }
+  if(e.key === 'Escape') togglePause();
+  if(e.key === ' ' && document.getElementById('overlay').classList.contains('hidden') === false){
+    e.preventDefault(); startGame();
+  }
+});
+window.addEventListener('keyup', e => {
+  const kn = KB_MAP[e.key] || KB_MAP[e.code];
+  if(kn !== undefined && KEY[kn] !== undefined){
+    e.preventDefault();
+    input._raw[KEY[kn]] = 0;
+  }
+});
+
+function updateInput(){
+  for(let i=0;i<KEY_COUNT;i++){
+    input.justPressed[i]  = input._raw[i] && !input.held[i] ? 1 : 0;
+    input.justReleased[i] = !input._raw[i] && input.held[i] ? 1 : 0;
+    input.held[i]         = input._raw[i];
+  }
+  touch.pressed=touch._raw&&!touch._prev;
+  touch.released=!touch._raw&&touch._prev;
+  touch.down=touch._raw;
+  touch._prev=touch._raw;
+}
+
+// API functions (mirror C++ pf_ API)
+function pf_key_held(k)     { return input.held[KEY[k]]         === 1; }
+function pf_key_pressed(k)  { return input.justPressed[KEY[k]]  === 1; }
+function pf_key_released(k) { return input.justReleased[KEY[k]] === 1; }
+function pf_touch_down()    { return touch.down; }
+function pf_touch_pressed() { return touch.pressed; }
+function pf_touch_released(){ return touch.released; }
+function pf_touch_x()       { return touch.x; }
+function pf_touch_y()       { return touch.y; }
+function pf_touch_in_rect(x, y, w, h){
+  if(!touch.down) return false;
+  const rx = evalExpr(x), ry = evalExpr(y), rw = evalExpr(w), rh = evalExpr(h);
+  return touch.x >= rx && touch.x < rx + rw && touch.y >= ry && touch.y < ry + rh;
+}
+function pf_set_obj_property(name, prop, val){
+  const o = getObj(name); if(!o) return;
+  const v = evalExpr(val);
+  if(prop === 'opacity') o.opacity = Math.max(0, Math.min(1, v));
+  else if(prop === 'rotation') o.rot = v;
+  else if(prop === 'scale'){
+    if(o._baseW == null){ o._baseW = o.w; o._baseH = o.h; }
+    const m = v < 0.001 ? 0.001 : v;
+    o.w = o._baseW * m;
+    o.h = o._baseH * m;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// RUNTIME STATE
+// ══════════════════════════════════════════════════════
+const RT = {
+  sceneName:    CFG.startScene,
+  objects:      [],   // live instances
+  vars:         {},   // name → float
+  timers:       {},   // key → {interval, elapsed}
+  delta:        0,
+  elapsed:      0,
+  frame:        0,
+  nextScene:    null,
+};
+
+// ══════════════════════════════════════════════════════
+// OBJECT INSTANCES
+// Each game object:
+// { id, defId, name, type, x, y, w, h, vx, vy, rot,
+//   vis, anim, txt, fs, fc, fx, fy, tag, oneShot, _fired }
+// ══════════════════════════════════════════════════════
+function makeInstance(def){
+  return {
+    id:      Math.random().toString(36).slice(2),
+    defId:   def.id,   // original scene-editor id (for image lookup)
+    name:    def.name,
+    type:    def.type,
+    layerId: def.layerId??0,
+    layerName: def.layerName||'',
+    zi:      def.zi??0,
+    x:       def.x??0, y: def.y??0,
+    w:       def.w??64, h: def.h??64,
+    vx:      0, vy: 0,
+    rot:     def.rot??0,
+    vis:     def.vis??true,
+    anim:    def.anim??'',
+    txt:     def.txt??'Text',
+    fs:      def.fs??16,
+    fc:      def.fc??'#000000',
+    fx:      def.fx??false,
+    fy:      def.fy??false,
+    tag:     def.tag??'',
+    oneShot: def.oneShot??false,
+    hasImage:def.hasImage??false,
+    opacity: def.opacity!=null?def.opacity:1,
+    _baseW:  def.w??64,
+    _baseH:  def.h??64,
+    _fired:  false,
+  };
+}
+
+// ══════════════════════════════════════════════════════
+// SCENE LOADING
+// ══════════════════════════════════════════════════════
+async function loadScene(name, progress){
+  progress(0.1, 'Reading scene objects…');
+
+  const defs = (ls('pf_scene_objects_' + name) || []);
+  // pf_scene_objects_* only has {id,name,type,tags} — we need full object data
+  // which is stored per-scene in pf_scene_full_<name> (written by preview())
+  const fullDefs = ls('pf_scene_full_' + name) || defs;
+
+  progress(0.3, 'Loading sprites…');
+  await loadImages(fullDefs);
+
+  progress(0.6, 'Spawning objects…');
+  RT.objects = fullDefs
+    .filter(o => o.vis !== false)
+    .map(o => makeInstance(o));
+
+  RT.sceneName = name;
+  RT.elapsed   = 0;
+  RT.frame     = 0;
+  RT.nextScene = null;
+  // Reset timers on scene load, keep variables
+  RT.timers    = {};
+  previewAccum = 0;
+  previewLastNow = 0;
+
+  document.getElementById('hud-scene').textContent = name;
+  document.getElementById('hud-objs').textContent  = RT.objects.length;
+
+  progress(1.0, 'Ready');
+}
+
+// ══════════════════════════════════════════════════════
+// RUNTIME API (mirror pf_ C++ functions)
+// ══════════════════════════════════════════════════════
+function getObj(name){
+  return RT.objects.find(o => o.name === name && o.vis !== false) || null;
+}
+
+function pf_obj_exists(name){  return !!getObj(name); }
+
+function pf_create_obj(name, x, y){
+  // Find template from scene definitions
+  const fullDefs = ls('pf_scene_full_' + RT.sceneName) || [];
+  const def = fullDefs.find(d => d.name === name);
+  if(!def) return;
+  const inst = makeInstance({...def, x:evalExpr(x), y:evalExpr(y)});
+  RT.objects.push(inst);
+  document.getElementById('hud-objs').textContent = RT.objects.length;
+}
+
+function pf_delete_obj(name){
+  RT.objects = RT.objects.filter(o => o.name !== name);
+  document.getElementById('hud-objs').textContent = RT.objects.length;
+}
+
+function pf_set_anim(name, anim){ const o=getObj(name); if(o) o.anim=anim; }
+function pf_set_pos(name, x, y){ const o=getObj(name); if(o){o.x=evalExpr(x);o.y=evalExpr(y);} }
+function evalExpr(v){
+  const src=String(v??'').trim();
+  if(!src) return 0;
+  let base=src
+    .replace(/\btouch\.(x|y)\b/g,(_,axis)=>String(axis==='x'?touch.x:touch.y))
+    .replace(/\bobject\.([A-Za-z_][A-Za-z0-9_]*)\b/g,(_,obj)=>String(getObj(obj)?1:0))
+    .replace(/\btext\.content\b/g,String(pf_get_var('text.content')));
+  // Support object refs in preview: Player.posX + 10
+  const mapped=base.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\.(posX|posY|x|y|w|h|width|height)\b/g,(_,obj,prop)=>{
+    const o=getObj(obj);
+    if(!o) return '0';
+    const map={posX:'x',x:'x',posY:'y',y:'y',w:'w',width:'w',h:'h',height:'h'};
+    const n=Number(o[map[prop]]||0);
+    return String(n);
+  });
+  const n=Number(mapped);
+  if(!Number.isNaN(n)) return n;
+  try{
+    // Safe-ish arithmetic evaluator for preview formulas.
+    const out = Function('"use strict";return ('+mapped+');')();
+    return Number(out)||0;
+  }catch(_){ return 0; }
+}
+
+const DIR_MAP = {UP:[0,-1],DOWN:[0,1],LEFT:[-1,0],RIGHT:[1,0]};
+function pf_add_force(name, dir, mag){
+  const o=getObj(name); if(!o) return;
+  const [dx,dy]=DIR_MAP[dir]||[0,0];
+  // Immediate constant velocity in given direction (set only affected axis so forces can combine)
+  const m = evalExpr(mag);
+  if(dx !== 0) o.vx = dx * m;
+  if(dy !== 0) o.vy = dy * m;
+}
+function pf_force_towards(name, target, mag){
+  const o=getObj(name), t=getObj(target); if(!o||!t) return;
+  const dx=(t.x+t.w/2)-(o.x+o.w/2), dy=(t.y+t.h/2)-(o.y+o.h/2);
+  const len=Math.sqrt(dx*dx+dy*dy); if(len<0.001) return;
+  // Immediate constant velocity towards target (plain move)
+  const m = evalExpr(mag);
+  o.vx = (dx/len) * m;
+  o.vy = (dy/len) * m;
+}
+function pf_stop_moving(name){ const o=getObj(name); if(o){o.vx=0;o.vy=0;} }
+
+function pf_overlaps(a, b){
+  const oa=getObj(a), ob=getObj(b); if(!oa||!ob) return false;
+  return !(oa.x+oa.w<=ob.x || ob.x+ob.w<=oa.x || oa.y+oa.h<=ob.y || ob.y+ob.h<=oa.y);
+}
+
+function pf_get_var(k)      { return RT.vars[k] ?? 0; }
+function pf_set_var(k, v)   { RT.vars[k] = evalExpr(v); }
+function pf_add_var(k, v)   { RT.vars[k] = (RT.vars[k]||0) + evalExpr(v); }
+
+function pf_load_scene(name){ RT.nextScene = name; }
+
+// Timer: uses a unique call-site key built from scene+eventIdx+condIdx
+function pf_timer_every(evtId, condIdx, intervalSec){
+  const key = RT.sceneName + '_' + evtId + '_' + condIdx;
+  const sec = Math.max(0.001, Number(intervalSec) || 0.001);
+  if(!RT.timers[key]) RT.timers[key] = {interval: sec, elapsed: 0};
+  const t = RT.timers[key];
+  t.elapsed += RT.delta;
+  if(t.elapsed >= t.interval){ t.elapsed -= t.interval; return true; }
+  return false;
+}
+
+function pf_timer_once(evtId, condIdx){
+  const key = 'once_' + RT.sceneName + '_' + evtId + '_' + condIdx;
+  if(RT.vars[key]) return false;
+  RT.vars[key] = 1;
+  return true;
+}
+
+// ══════════════════════════════════════════════════════
+// EVENT RUNNER — JS equivalent of generated C++
+// ══════════════════════════════════════════════════════
+function runEvents(){
+  const allEvents = readAllEvents();
+  const sceneEvents = allEvents.filter(e => e.scene === RT.sceneName && !e.disabled);
+
+  sceneEvents.forEach((ev, evIdx) => {
+    // Evaluate all conditions
+    const pass = evalConditions(ev.conditions, evIdx);
+    const run = ev.reversed ? !pass : pass;
+    if(run) execActions(ev.actions);
+  });
+}
+
+function evalConditions(conditions, evIdx){
+  if(!conditions.length) return true; // no conditions = always runs
+  return conditions.every((c, ci) => evalCond(c, evIdx, ci));
+}
+
+function evalCond(c, evIdx, ci){
+  const p = k => c.params?.[k] ?? '';
+  switch(c.id){
+    case 'every_frame':   return true;
+    case 'scene_start':
+    case 'frame_start':   return RT.frame === 0;
+    case 'execute_once':  return pf_timer_once(evIdx, ci);
+    case 'every_n_ms':    return pf_timer_every(evIdx, ci, evalExpr(p('ms')) / 1000);
+    case 'every_n_sec':   return pf_timer_every(evIdx, ci, evalExpr(p('seconds')));
+    case 'touch_in_rect': return pf_touch_in_rect(p('x'), p('y'), p('w'), p('h'));
+    case 'key_held':      return pf_key_held(p('key'));
+    case 'key_pressed':   return pf_key_pressed(p('key'));
+    case 'key_released':  return pf_key_released(p('key'));
+    case 'touch_down':    return pf_touch_down();
+    case 'touch_pressed': return pf_touch_pressed();
+    case 'touch_released':return pf_touch_released();
+    case 'obj_overlaps':  return pf_overlaps(p('obj'), p('trigger'));
+    case 'obj_exists':    return pf_obj_exists(p('obj'));
+    case 'obj_out_of_view': {
+      const o = getObj(p('obj'));
+      if(!o) return false;
+      const isBot = isBottomLayer(o.layerId, o);
+      const sw = isBot ? BOT_W : TOP_W;
+      const sh = isBot ? BOT_H : TOP_H;
+      return (o.x + o.w < 0 || o.x > sw || o.y + o.h < 0 || o.y > sh);
+    }
+    case 'var_eq':        return pf_get_var(p('var')) == evalExpr(p('val'));
+    case 'var_gt':        return pf_get_var(p('var')) >  evalExpr(p('val'));
+    default: return true;
+  }
+}
+
+function execActions(actions){
+  actions.forEach(a => {
+    const p = k => a.params?.[k] ?? '';
+    switch(a.id){
+      case 'create_obj':    pf_create_obj(p('obj'), p('x'), p('y'));         break;
+      case 'delete_obj':    pf_delete_obj(p('obj'));                          break;
+      case 'set_anim':      pf_set_anim(p('obj'), p('anim'));                 break;
+      case 'add_force':     pf_add_force(p('obj'), p('dir'), p('mag'));       break;
+      case 'force_towards': pf_force_towards(p('obj'), p('target'), p('mag'));break;
+      case 'stop_moving':   pf_stop_moving(p('obj'));                         break;
+      case 'set_pos':       pf_set_pos(p('obj'), p('x'), p('y'));            break;
+      case 'set_var':       pf_set_var(p('var'), p('val'));                   break;
+      case 'add_var':       pf_add_var(p('var'), p('val'));                   break;
+      case 'load_scene':    pf_load_scene(p('scene'));                        break;
+      case 'set_obj_property': pf_set_obj_property(p('obj'), p('prop'), p('val')); break;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// PHYSICS INTEGRATION
+// ══════════════════════════════════════════════════════
+function integrate(){
+  RT.objects.forEach(o => {
+    if(!o.vis) return;
+    o.x += o.vx * RT.delta;
+    o.y += o.vy * RT.delta;
+    // No per-frame damping — velocities persist so forces accumulate without smoothing
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════════════
+function render(){
+  // ── Top screen ──────────────────────────────────────
+  ctxTop.fillStyle = '#111';
+  ctxTop.fillRect(0, 0, TOP_W, TOP_H);
+
+  // ── Bottom screen ────────────────────────────────────
+  ctxBot.fillStyle = '#111';
+  ctxBot.fillRect(0, 0, BOT_W, BOT_H);
+
+  // Sort by layer order
+  const layerOrder = CFG.layerOrder || [];
+  const layers     = CFG.layers     || [];
+  const layerRank  = id => { const i=layerOrder.indexOf(id); return i===-1?99:i; };
+  const sorted = [...RT.objects].sort((a,b)=>{
+    const ld = layerRank(a.layerId) - layerRank(b.layerId);
+    return ld !== 0 ? ld : (a.zi??0) - (b.zi??0);
+  });
+
+  // Draw top-screen objects
+  sorted.forEach(o => {
+    if(!o.vis) return;
+    if(isBottomLayer(o.layerId, o)) return;
+    drawObjOnCtx(ctxTop, o);
+  });
+
+  // Draw bottom-screen objects
+  sorted.forEach(o => {
+    if(!o.vis) return;
+    if(!isBottomLayer(o.layerId, o)) return;
+    drawObjOnCtx(ctxBot, o);
+  });
+
+  // Variable overlay hidden (disabled)
+}
+
+function drawObj(o){ drawObjOnCtx(ctx, o); }
+function drawObjOnCtx(ctx, o){
+  ctx.save();
+  const op = (o.opacity!=null && o.opacity!==undefined) ? o.opacity : 1;
+  ctx.globalAlpha = Math.max(0, Math.min(1, op));
+  const cx = o.x + o.w/2, cy = o.y + o.h/2;
+  const rot = (o.rot||0) * Math.PI/180;
+  ctx.translate(cx, cy);
+  if(rot) ctx.rotate(rot);
+  if(o.fx||o.fy) ctx.scale(o.fx?-1:1, o.fy?-1:1);
+
+  if(o.type === 'text'){
+    ctx.font = `${o.fs||16}px sans-serif`;
+    ctx.fillStyle = o.fc||'#000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(o.txt||'', 0, 0);
+    ctx.restore(); return;
+  }
+
+  if(o.type === 'trigger'){
+    // Triggers are invisible in the game (no draw)
+    ctx.restore(); return;
+  }
+
+  // Sprite
+  const img = IMG[o.defId];
+  if(img && img.complete && img.naturalWidth > 0){
+    ctx.drawImage(img, -o.w/2, -o.h/2, o.w, o.h);
+  } else {
+    // Placeholder
+    ctx.fillStyle   = '#6c8aff33';
+    ctx.strokeStyle = '#6c8aff';
+    ctx.lineWidth   = 1;
+    ctx.fillRect(-o.w/2, -o.h/2, o.w, o.h);
+    ctx.strokeRect(-o.w/2, -o.h/2, o.w, o.h);
+    ctx.font = `${Math.min(o.h*.5, 20)}px sans-serif`;
+    ctx.fillStyle    = '#6c8aff';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🖼', 0, 0);
+  }
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════
+// GAME LOOP
+// ══════════════════════════════════════════════════════
+const PREVIEW_FPS = 60;
+const PREVIEW_FRAME_MS = 1000 / PREVIEW_FPS;
+let running   = false;
+let paused    = false;
+let previewAccum = 0;
+let previewLastNow = 0;
+let frameCount = 0;
+let fpsTime    = 0;
+let fps        = 0;
+
+function loop(now){
+  if(!running) return;
+  requestAnimationFrame(loop);
+  if(!previewLastNow) previewLastNow = now;
+  previewAccum += now - previewLastNow;
+  previewLastNow = now;
+
+  if(paused){
+    if(previewAccum >= PREVIEW_FRAME_MS){
+      previewAccum -= PREVIEW_FRAME_MS;
+      render();
+    }
+    return;
+  }
+
+  if(previewAccum < PREVIEW_FRAME_MS) return;
+  previewAccum -= PREVIEW_FRAME_MS;
+  RT.delta = PREVIEW_FRAME_MS / 1000;
+
+  frameCount++;
+  fpsTime += RT.delta;
+  if(fpsTime >= 1){ fps = frameCount; frameCount=0; fpsTime=0; document.getElementById('hud-fps').textContent=fps; }
+
+  updateInput();
+
+  RT.elapsed += RT.delta;
+  // RT.frame: scene_start sees 0 on first tick — increment at end
+  runEvents();
+  integrate();
+  render();
+  RT.frame++;
+
+  // Scene transition
+  if(RT.nextScene){
+    const next = RT.nextScene;
+    RT.nextScene = null;
+    handleSceneLoad(next);
+  }
+}
+
+async function handleSceneLoad(name){
+  running = false;
+  showOverlay('loading', 'Loading ' + name + '…', '');
+  await loadScene(name, (pct, msg) => {
+    document.getElementById('load-bar').style.width = (pct*100)+'%';
+    document.getElementById('ov-desc').textContent = msg;
+  });
+  hideOverlay();
+  document.getElementById('load-bar').style.width='0%';
+  running = true;
+  previewAccum = 0;
+  previewLastNow = performance.now();
+  requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════════════
+// CONTROLS
+// ══════════════════════════════════════════════════════
+function togglePause(){
+  paused = !paused;
+  document.getElementById('btn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
+}
+
+// Restart should also reset runtime variables
+function restart(){ RT.vars = {}; handleSceneLoad(CFG.startScene); }
+
+// ══════════════════════════════════════════════════════
+// OVERLAY HELPERS
+// ══════════════════════════════════════════════════════
+function showOverlay(icon, title, desc, warn=''){
+  const icons={loading:'⏳',error:'⚠',start:'⚡'};
+  document.getElementById('ov-title').textContent = title;
+  document.getElementById('ov-desc').textContent  = desc;
+  document.getElementById('ov-warn').textContent  = warn;
+  document.querySelector('.ov-icon').textContent  = icons[icon]||icon;
+  // Show play button for start, not for loading/error
+  let btn = document.querySelector('.ov-btn');
+  if(btn) btn.remove();
+  if(icon==='start'){
+    const b=document.createElement('button');
+    b.className='ov-btn'; b.textContent='▶ Start'; b.onclick=startGame;
+    document.getElementById('overlay').appendChild(b);
+  }
+  document.getElementById('overlay').classList.remove('hidden');
+}
+
+function hideOverlay(){
+  document.getElementById('overlay').classList.add('hidden');
+}
+
+function startGame(){
+  hideOverlay();
+  running = true;
+  previewAccum = 0;
+  previewLastNow = performance.now();
+  requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════
+async function init(){
+  showOverlay('loading', 'Loading Preview…', 'Reading scene data…');
+
+  // Check if we have scene data
+  const fullDefs = ls('pf_scene_full_' + CFG.startScene);
+  if(!fullDefs || !fullDefs.length){
+    const warn = fullDefs === null
+      ? 'No scene data found. Make sure you click ▶ Run from the Scene Editor.'
+      : 'Scene "' + CFG.startScene + '" has no objects.';
+    showOverlay('start', 'Ready to Preview', warn.includes('No scene data') ? 'Open the Scene Editor and click ▶ Run.' : CFG.startScene + ' loaded (no objects).', warn.includes('No scene') ? warn : '');
+    if(!fullDefs) return;
+  }
+
+  try{
+    await loadScene(CFG.startScene, (pct, msg) => {
+      document.getElementById('load-bar').style.width = (pct*100)+'%';
+      document.getElementById('ov-desc').textContent = msg;
+    });
+    document.getElementById('load-bar').style.width='0%';
+
+    // Show platform key hints
+    const hints = 'Arrow keys = D-pad  ·  A=A  B=B  X=X  Y=Y  Q=L  E=R  Enter=Start';
+
+    showOverlay('start', '▶ ' + CFG.startScene, hints);
+  } catch(err){
+    showOverlay('error', 'Load Error', String(err));
+  }
+}
+
+init();
+</script>
+</body>
+</html>
