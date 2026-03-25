@@ -652,9 +652,14 @@ function populateSceneSel(scenes){
 function initFromStorage(){
   try{
     const stored=JSON.parse(localStorage.getItem('pf_scene_list')||'[]');
-    if(stored.length) populateSceneSel(stored);
+    if(Array.isArray(stored) && stored.length){ populateSceneSel(stored); loadSceneObjs(currentScene); return; }
   }catch{}
-  loadSceneObjs(currentScene);
+
+  // No stored scene list — request it from parent (robust for hosts that rewrite routes)
+  try{ loadSceneObjs(currentScene); }catch(_){ }
+  if(window.parent && window.parent!==window){
+    try{ window.parent.postMessage({type:'pf-need-scene-list'}, '*'); }catch(_){ }
+  }
 }
 
 window.addEventListener('storage',e=>{

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>StreetCode Editor</title>
+<title>PixelFlow — Scene Editor</title>
 <script src="pf_project.js"></script>
 <script src="pf_codegen.js"></script>
 <style>
@@ -1746,6 +1746,16 @@ window.addEventListener('message',e=>{
   if(e.data.type==='pf-events-ready'){ _eventsReady=true; return; }
   if(e.data.type==='pf-init'&&e.data.project){
     // 3DS only — nothing to switch
+  }
+  if(e.data.type==='pf-need-scene-list'){
+    try{
+      const sceneList = S.scenes.map(s=>({name:s.name, isEvents:s.isEvents}));
+      const gameName = curScene()?.isEvents ? curScene().name.replace(/\s*\(Events\)\s*$/,'') : curScene()?.name || 'Level_01';
+      // Reply directly to the requester window (iframe)
+      e.source.postMessage({type:'pf-scene-list', scenes:sceneList}, '*');
+      e.source.postMessage({type:'pf-set-scene', scene:gameName}, '*');
+    }catch(_){ }
+    return;
   }
   if(e.data.type==='pf-preview') preview();
   if(e.data.type==='pf-toggle-grid') toggleGrid();
