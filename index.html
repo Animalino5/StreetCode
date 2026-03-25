@@ -1750,6 +1750,7 @@ window.addEventListener('message',e=>{
   if(e.data.type==='pf-need-scene-list'){
     try{
       const sceneList = S.scenes.map(s=>({name:s.name, isEvents:s.isEvents}));
+      console.debug('[index] pf-need-scene-list received from', e.source, 'sending scene-list', sceneList.map(x=>x.name));
       const gameName = curScene()?.isEvents ? curScene().name.replace(/\s*\(Events\)\s*$/,'') : curScene()?.name || 'Level_01';
       // Reply directly to the requester window (iframe)
       e.source.postMessage({type:'pf-scene-list', scenes:sceneList}, '*');

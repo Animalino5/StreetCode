@@ -677,6 +677,7 @@ function postShell(type,payload){if(window.parent!==window)window.parent.postMes
 window.addEventListener('message',e=>{
   if(!e.data||typeof e.data!=='object')return;
   const {type}=e.data;
+  console.debug('[events] message received:', type, e.data);
   if(type==='pf-init'&&e.data.project){
     platform=e.data.project.platform||'PSP';
     document.getElementById('sb-plat').textContent=platform.split(' ').pop();
@@ -699,6 +700,7 @@ window.addEventListener('message',e=>{
   }
   // Scene editor tells us which game scene to show events for
   if(type==='pf-set-scene'&&e.data.scene){
+    console.debug('[events] pf-set-scene ->', e.data.scene);
     const name=e.data.scene;
     // Update scene selector to this scene if it exists, or add it
     const sel=document.getElementById('scene-sel');
