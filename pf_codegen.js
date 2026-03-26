@@ -222,8 +222,9 @@ typedef enum {
 // Prefixed PF_KEY_ to avoid colliding with libctru's KEY_A/KEY_B/etc macros
 typedef enum {
     PF_KEY_UP, PF_KEY_DOWN, PF_KEY_LEFT, PF_KEY_RIGHT,
+    PF_KEY_CPAD_UP, PF_KEY_CPAD_DOWN, PF_KEY_CPAD_LEFT, PF_KEY_CPAD_RIGHT,
     PF_KEY_A, PF_KEY_B, PF_KEY_X, PF_KEY_Y,
-    PF_KEY_L, PF_KEY_R,
+    PF_KEY_L, PF_KEY_R, PF_KEY_ZL, PF_KEY_ZR,
     PF_KEY_START, PF_KEY_SELECT,
     PF_KEY_CROSS, PF_KEY_CIRCLE, PF_KEY_SQUARE, PF_KEY_TRIANGLE,
     PF_KEY_COUNT
