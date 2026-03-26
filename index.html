@@ -2560,9 +2560,10 @@ void pf_runtime_render(PF_State* s){
                 u8 a=(u8)(o->opacity*255.0f);
                 u32 col=C2D_Color32(o->text_r,o->text_g,o->text_b,a);
                 C2D_DrawText(&t,C2D_WithColor,o->pos.x,o->pos.y,0.5f,sc,sc,col);
-            } else if(o->has_tex)
-                C2D_DrawImageAt(o->tex,o->pos.x,o->pos.y,0.5f,NULL,o->size.x/(float)o->tex.subtex->width,o->size.y/(float)o->tex.subtex->height);
-            else
+            } else if(o->has_tex) {
+                C2D_ImageTint imgTint; C2D_AlphaImageTint(&imgTint, o->opacity);
+                C2D_DrawImageAt(o->tex,o->pos.x,o->pos.y,0.5f,&imgTint,o->size.x/(float)o->tex.subtex->width,o->size.y/(float)o->tex.subtex->height);
+            } else
                 C2D_DrawRectSolid(o->pos.x,o->pos.y,0.5f,o->size.x,o->size.y,C2D_Color32(0x6c,0x8a,0xff,(u8)(o->opacity*255.0f)));
         }
         o=o->_next;}}
@@ -2580,9 +2581,10 @@ void pf_runtime_render(PF_State* s){
                 u8 a=(u8)(o->opacity*255.0f);
                 u32 col=C2D_Color32(o->text_r,o->text_g,o->text_b,a);
                 C2D_DrawText(&t,C2D_WithColor,o->pos.x,o->pos.y,0.5f,sc,sc,col);
-            } else if(o->has_tex)
-                C2D_DrawImageAt(o->tex,o->pos.x,o->pos.y,0.5f,NULL,o->size.x/(float)o->tex.subtex->width,o->size.y/(float)o->tex.subtex->height);
-            else
+            } else if(o->has_tex) {
+                C2D_ImageTint imgTint; C2D_AlphaImageTint(&imgTint, o->opacity);
+                C2D_DrawImageAt(o->tex,o->pos.x,o->pos.y,0.5f,&imgTint,o->size.x/(float)o->tex.subtex->width,o->size.y/(float)o->tex.subtex->height);
+            } else
                 C2D_DrawRectSolid(o->pos.x,o->pos.y,0.5f,o->size.x,o->size.y,C2D_Color32(0xe6,0x7e,0x22,(u8)(o->opacity*255.0f)));
         }
         o=o->_next;}}
