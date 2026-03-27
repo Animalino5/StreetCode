@@ -263,6 +263,7 @@ eventsMap=loadEventsFromStorage();
 
 // ══════════ SCENE ══════════
 function sceneEvts(){
+  currentScene = daCurScene;
   if(!currentScene) return [];
   if(!eventsMap[currentScene]) eventsMap[currentScene]=[];
   return eventsMap[currentScene];
