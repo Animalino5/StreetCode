@@ -627,7 +627,7 @@ function switchScene(id){
 
     if(!evtFrame._loaded){
       _eventsReady=false;
-      evtFrame.src='events.html#'+encodeURIComponent(gameName);
+      evtFrame.src='events.html?scene='+encodeURIComponent(curScene().toString());
       evtFrame.onload=()=>{
         evtFrame._loaded=true;
         setTimeout(()=>{
@@ -637,7 +637,7 @@ function switchScene(id){
         },1200);
       };
     } else {
-		evtFrame.src="events.html?scene="+encodeURIComponent(curScene().toString)
+		evtFrame.src="events.html?scene="+encodeURIComponent(curScene().toString);
     }
   } else {
     // Show canvas, hide events iframe
