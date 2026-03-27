@@ -227,7 +227,6 @@ CONDITIONS.forEach(g=>g.items.forEach(c=>CMAP[c.id]=c));
 ACTIONS.forEach(g=>g.items.forEach(a=>AMAP[a.id]=a));
 
 // ══════════ STATE ══════════
-const SK='pf_events_v1';
 const SK_BY_SCENE='pf_events_by_scene_v1';
 let eventsMap={},selId=null,currentScene='',sceneObjs=['Player'],platform='PSP';
 function ls(k){try{return JSON.parse(localStorage.getItem(k))||null;}catch{return null;}}
@@ -235,11 +234,13 @@ function sv(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
 function uid(){return Math.random().toString(36).slice(2,9);}
 function loadEventsFromStorage(){
   const byScene=ls(SK_BY_SCENE);
+  console.log("raw load: ", byScene);
   if(byScene && typeof byScene==='object' && !Array.isArray(byScene)){
     const map={};
     Object.keys(byScene).forEach(sc=>{
       map[sc]=(byScene[sc]||[]).map(e=>({...e,scene:sc}));
     });
+    console.log("mapped load: ", map);
     return map;
   }
 }
@@ -252,8 +253,7 @@ function allEvents(){
 }
 function save(){
   sv(SK_BY_SCENE,eventsMap);
-  // Keep legacy flat key for compatibility with older builds/pages
-  sv(SK,allEvents());
+  console.log("raw write: ", eventsMap);
 }
 
 eventsMap=loadEventsFromStorage();
