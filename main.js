@@ -625,20 +625,11 @@ function switchScene(id){
     // Write to localStorage immediately so events.html can read it on init
     try{localStorage.setItem('pf_scene_objects_'+gameName,JSON.stringify(objList));}catch{}
 
-    function sendToEventsFrame(){
-      try{
-        evtFrame.contentWindow.postMessage({type:'pf-set-scene',  scene:gameName},'*');
-        evtFrame.contentWindow.postMessage({type:'pf-scene-objects',scene:gameName,objects:objList},'*');
-        evtFrame.contentWindow.postMessage({type:'pf-scene-list',  scenes:S.scenes.map(s=>({name:s.name, isEvents:s.isEvents}))},'*');
-      }catch(_){}
-    }
-
     if(!evtFrame._loaded){
       _eventsReady=false;
       evtFrame.src='events.html#'+encodeURIComponent(gameName);
       evtFrame.onload=()=>{
         evtFrame._loaded=true;
-        sendToEventsFrame();
         setTimeout(()=>{
           if(!_eventsReady){
             postShell('pf-toast',{msg:'Events page failed to load correctly. If hosted on Netlify, ensure /events.html is not rewritten to /index.html.',style:'warn'});
@@ -646,7 +637,7 @@ function switchScene(id){
         },1200);
       };
     } else {
-      sendToEventsFrame();
+		evtFrame.src="events.html?scene="+encodeURIComponent(curScene().toString)
     }
   } else {
     // Show canvas, hide events iframe
