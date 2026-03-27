@@ -242,15 +242,6 @@ function loadEventsFromStorage(){
     });
     return map;
   }
-  // Backward compat: old flat array storage
-  const flat=ls(SK)||[];
-  const map={};
-  flat.forEach(e=>{
-    const sc=e?.scene||'Level_01';
-    if(!map[sc]) map[sc]=[];
-    map[sc].push({...e,scene:sc});
-  });
-  return map;
 }
 function allEvents(){
   const out=[];
