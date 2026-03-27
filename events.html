@@ -175,7 +175,7 @@ const KEYS=['UP','DOWN','LEFT','RIGHT','A','B','X','Y','L','R','START','SELECT',
 const DIRS=['UP','DOWN','LEFT','RIGHT'];
 
 const urlParams = new URLSearchParams(window.location.search);
-const daCurScene = urlParams.get('scene')
+const daCurScene = decodeURIComponent(urlParams.get('scene'))
   
 const CONDITIONS=[
   {group:'Timing',items:[
