@@ -1,8 +1,8 @@
-#main {display: flex; height: 90vh; overflow: hidden; }
-#eventsDisplay {background-color:#343434; flex:1; overflow-y:auto; height:100%; border: 1px solid #969696;}
-#rightBar {background-color:#111111; overflow-y:auto; width:40%; height:100%; border: 1px solid #969696; border-left: none; border-top: none;}
-#topBar {overflow: hidden; border: 1px solid #969696; height:10vh;}
+#main {display: flex; height: 90%; overflow: hidden; }
+#eventsDisplay {background-color:#343434; flex:1; overflow-y:auto; height:100%;}
+#rightBar {background-color:#111111; overflow-y:auto; width:40%; height:100%;}
+#topBar {overflow: hidden; border: 1px solid #969696; height:10%;}
 #eventList {flex-direction: column; gap: 5px; background-color:#343434;}
-#addEvent {border-radius: 3px; background-color: #de00cf; color: #ffffff;}
+#eventButton {border-radius: 3px; background-color: #de00cf; color: #ffffff;}
 .eventSect {border: 2px dashed #919191; border-radius: 8px;}
 h2 {font-size:20px; color:#545454;}
