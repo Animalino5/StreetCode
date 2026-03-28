@@ -4,6 +4,6 @@
 #rightBar {background-color:#111111; overflow-y:auto; width:40%; height:100%;}
 #topBar {display: flex; overflow: hidden; border: 1px solid #969696; height:10%;}
 #eventList {flex-direction: column; gap: 5px; background-color:#343434;}
-#eventButton {border-radius: 3px; background-color: #de00cf; color: #ffffff;}
+#eventButton {border-radius: 3px; background-color: #de00cf; color: #ffffff; border: none;}
 .eventSect {border: 2px dashed #919191; border-radius: 8px;}
 h2 {font-size:20px; color:#545454;}
