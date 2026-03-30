@@ -6,5 +6,5 @@
 #eventList {flex-direction: column; gap: 0px; background-color:#343434;}
 #eventButton {border-radius: 3px; background-color: #de00cf; color: #ffffff; border: none;}
 .eventSect {border: 1px dashed #919191; height: 20vh;}
-h2 {font-size:20px; color:#545454; text-align: center;}
-p {font-size:5px;}
+h2 {font-size:20px; color:#ababab; text-align: center; font-family: Arial, Helvetica;}
+p {font-size:5px; font-family: Arial Helvetica; color:#999999;}
